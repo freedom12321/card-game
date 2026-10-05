@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Card Game — Running Expectation</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --ink: #f2f2f2;
+      --gold: #f2cf66;
+      --blue: #61678a;
+      --pink: #db73c5;
+      --gray: #999999;
+      --panel: #111113;
+      --line: #2d2d32;
+      --green: #7ec86e;
+      --orange: #e09060;
+      --purple: #b07cc6;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); }
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      padding: clamp(14px, 2vw, 32px);
+      display: grid;
+      place-items: start center;
+    }
+    main { width: min(1700px, 100%); }
+    header { margin-bottom: .9rem; }
+    h1 { margin: 0 0 .25rem; font-size: clamp(1.6rem, 3.5vw, 3.2rem); font-weight: 500; }
+    header p { margin: 0; color: var(--gray); font: clamp(.9rem, 1.4vw, 1.2rem)/1.4 system-ui, sans-serif; }
+
+    /* ── Two-panel layout ───────────────────────────────────────── */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: clamp(14px, 2.5vw, 40px);
+      align-items: start;
+    }
+
+    /* ── Simulation panel ───────────────────────────────────────── */
+    .sim-panel {}
+    .stage { display: grid; grid-template-columns: minmax(200px, .9fr) minmax(300px, 1.2fr); gap: clamp(14px, 2vw, 36px); align-items: center; }
+    .draw-area { min-height: 260px; display: grid; place-items: center; }
+    .card {
+      width: clamp(150px, 16vw, 220px);
+      aspect-ratio: 5 / 7;
+      border: 3px solid var(--ink);
+      border-radius: 18px;
+      background: #f5f1e8;
+      color: #141414;
+      display: grid;
+      place-items: center;
+      position: relative;
+      box-shadow: 0 16px 42px rgb(0 0 0 / .45);
+    }
+    .card.red { color: #a73342; }
+    .corner { position: absolute; left: 14px; top: 10px; display: grid; text-align: center; font-size: clamp(1.2rem, 2.2vw, 1.9rem); line-height: .9; }
+    .corner.bottom { inset: auto 14px 10px auto; transform: rotate(180deg); }
+    .rank { font-size: clamp(3.5rem, 9vw, 7.5rem); line-height: 1; }
+    .payout { position: absolute; bottom: -2.5rem; color: var(--gold); font: 600 clamp(1rem, 1.6vw, 1.5rem)/1.2 system-ui, sans-serif; white-space: nowrap; }
+    .placeholder { color: #56565c; font: 1rem/1.4 system-ui, sans-serif; text-align: center; padding: 1rem; }
+    .stats { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 0; border-top: 1px solid var(--line); }
+    .stats dt, .stats dd { margin: 0; padding: .6rem 0; border-bottom: 1px solid var(--line); font: clamp(.9rem, 1.3vw, 1.1rem)/1.25 system-ui, sans-serif; }
+    .stats dt { color: var(--gray); }
+    .stats dd { text-align: right; font-variant-numeric: tabular-nums; }
+    .stats dd.emphasis { color: var(--gold); font-weight: 650; }
+    .controls { margin: 1.8rem 0 1rem; display: flex; gap: .55rem; flex-wrap: wrap; }
+    button {
+      appearance: none;
+      border: 1px solid #44444c;
+      border-radius: 8px;
+      background: #17171a;
+      color: var(--ink);
+      padding: .65rem .9rem;
+      font: 600 .92rem/1 system-ui, sans-serif;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--gold); }
+    button:focus-visible { outline: 3px solid var(--pink); outline-offset: 2px; }
+    button.primary { background: var(--gold); color: #17120a; border-color: var(--gold); }
+    button.reveal { margin-left: auto; color: var(--gold); }
+    .chart-wrap { position: relative; min-height: 220px; }
+    canvas { width: 100%; height: 240px; display: block; }
+    .theory {
+      min-height: 1.5em;
+      color: var(--gold);
+      font: clamp(.9rem, 1.3vw, 1.05rem)/1.4 system-ui, sans-serif;
+      text-align: center;
+    }
+    kbd { color: var(--gray); font-size: .82em; }
+    @media (prefers-reduced-motion: no-preference) {
+      .card.deal { animation: deal .24s ease-out; }
+      @keyframes deal { from { transform: translateY(-10px); opacity: .35; } to { transform: none; opacity: 1; } }
+    }
+
+    /* ── R code panel ───────────────────────────────────────────── */
+    .code-panel {
+      background: #0d0d10;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.2rem 1.4rem;
+      position: sticky;
+      top: 16px;
+    }
+    .code-panel h2 {
+      margin: 0 0 .8rem;
+      font-size: 1rem;
+      font-weight: 600;
+      font-family: system-ui, sans-serif;
+      color: var(--gray);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    pre {
+      margin: 0;
+      overflow-x: auto;
+      font: 13.5px/1.65 "SF Mono", "Fira Code", "Consolas", monospace;
+    }
+    /* syntax token colours */
+    .kw  { color: #c678dd; }   /* keyword / operator */
+    .fn  { color: #61afef; }   /* function call */
+    .str { color: #98c379; }   /* string */
+    .num { color: #d19a66; }   /* number */
+    .cmt { color: #5c6370; font-style: italic; } /* comment */
+    .var { color: var(--ink); } /* variable */
+    .op  { color: #56b6c2; }   /* <- = */
+
+    .code-divider {
+      border: none;
+      border-top: 1px solid var(--line);
+      margin: .9rem 0;
+    }
+    .code-note {
+      font: .82rem/1.5 system-ui, sans-serif;
+      color: var(--gray);
+      margin: .6rem 0 0;
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .code-panel { position: static; }
+      .stage { grid-template-columns: 1fr; }
+      .draw-area { min-height: 240px; }
+      .card { width: 150px; }
+      button.reveal { margin-left: 0; }
+      canvas { height: 200px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>How much is this game worth?</h1>
+      <p>Draw one card. Your payout depends on the rank. Watch the running average converge.</p>
+    </header>
+
+    <div class="layout">
+      <!-- ── Left: simulation ─────────────────────────────────── -->
+      <section class="sim-panel" aria-label="Card game simulation">
+        <section class="stage">
+          <div class="draw-area">
+            <div class="card" id="card" aria-live="polite">
+              <div class="placeholder">Choose a draw count<br>to begin.</div>
+            </div>
+          </div>
+          <dl class="stats" aria-live="polite">
+            <dt>Last draw</dt><dd id="lastDraw">—</dd>
+            <dt>Last payout</dt><dd id="lastPayout">—</dd>
+            <dt>Number of plays</dt><dd id="plays">0</dd>
+            <dt>Total payout</dt><dd id="total">$0</dd>
+            <dt>Running average</dt><dd class="emphasis" id="average">—</dd>
+          </dl>
+        </section>
+
+        <nav class="controls" aria-label="Simulation controls">
+          <button class="primary" data-draw="1">Draw 1 <kbd>1</kbd></button>
+          <button data-draw="10">Draw 10 <kbd>2</kbd></button>
+          <button data-draw="100">Draw 100 <kbd>3</kbd></button>
+          <button data-draw="1000">Draw 1,000 <kbd>4</kbd></button>
+          <button id="reset">Reset <kbd>R</kbd></button>
+          <button class="reveal" id="reveal">Reveal theoretical expectation <kbd>E</kbd></button>
+        </nav>
+
+        <section class="chart-wrap" aria-label="Running-average chart">
+          <canvas id="chart" role="img" aria-label="Running average payout by number of plays"></canvas>
+          <div class="theory" id="theory" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <!-- ── Right: R code ────────────────────────────────────── -->
+      <aside class="code-panel" aria-label="R code">
+        <h2>R Code (simulation)</h2>
+        <pre><span class="var">card</span> <span class="op">&lt;-</span> <span class="fn">c</span>(<span class="str">"A"</span>,<span class="str">"K"</span>,<span class="str">"Q"</span>,<span class="str">"J"</span>,<span class="str">"10"</span>,
+         <span class="str">"9"</span>,<span class="str">"8"</span>,<span class="str">"7"</span>,<span class="str">"6"</span>,<span class="str">"5"</span>,
+         <span class="str">"4"</span>,<span class="str">"3"</span>,<span class="str">"2"</span>)
+
+<span class="var">plays</span> <span class="op">&lt;-</span> <span class="num">5000000</span>
+<span class="var">win</span>   <span class="op">&lt;-</span> <span class="fn">vector</span>()
+
+<span class="kw">for</span> (<span class="var">i</span> <span class="kw">in</span> <span class="num">1</span><span class="op">:</span><span class="var">plays</span>) {
+  <span class="var">draw</span> <span class="op">&lt;-</span> <span class="fn">sample</span>(<span class="var">card</span>, <span class="num">1</span>)
+  <span class="var">win</span>[<span class="var">i</span>] <span class="op">&lt;-</span> <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"A"</span>, <span class="num">15</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"K"</span>, <span class="num">15</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"Q"</span>, <span class="num">15</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"J"</span>, <span class="num">15</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"10"</span>,<span class="num">10</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"9"</span>,  <span class="num">9</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"8"</span>,  <span class="num">8</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"7"</span>,  <span class="num">7</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"6"</span>,  <span class="num">6</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"5"</span>,  <span class="num">5</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"4"</span>,  <span class="num">4</span>,
+             <span class="fn">ifelse</span>(<span class="var">draw</span><span class="op">==</span><span class="str">"3"</span>,  <span class="num">3</span>,
+                    <span class="num">2</span>))))))))))))
+}
+
+<span class="var">avg.pmt</span> <span class="op">&lt;-</span> <span class="fn">sum</span>(<span class="var">win</span>) <span class="op">/</span> <span class="fn">length</span>(<span class="var">win</span>)
+<span class="fn">sum</span>(<span class="var">win</span>)
+<span class="var">avg.pmt</span></pre>
+
+        <hr class="code-divider">
+
+        <pre><span class="cmt"># Theoretical expected value</span>
+<span class="cmt"># 4 face cards × $15 + 9 number cards</span>
+<span class="var">E</span> <span class="op">&lt;-</span> (<span class="num">4</span><span class="op">*</span><span class="num">15</span> <span class="op">+</span> <span class="num">10</span><span class="op">+</span><span class="num">9</span><span class="op">+</span><span class="num">8</span><span class="op">+</span><span class="num">7</span><span class="op">+</span><span class="num">6</span><span class="op">+</span><span class="num">5</span><span class="op">+</span><span class="num">4</span><span class="op">+</span><span class="num">3</span><span class="op">+</span><span class="num">2</span>) <span class="op">/</span> <span class="num">13</span>
+<span class="cmt"># = 114/13 ≈ 8.77</span></pre>
+
+        <p class="code-note">
+          Each draw is independent. As <em>n</em> grows, the running
+          average converges to the theoretical expectation — that is
+          the Law of Large Numbers in action.
+        </p>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+      const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+      const suits = ["♠", "♥", "♦", "♣"];
+      const payoutFor = rank => (["A", "K", "Q", "J"].includes(rank) ? 15 : Number(rank));
+      const expected = 114 / 13;
+      const state = { n: 0, sum: 0, history: [], lastRank: null, lastSuit: null, lastPayout: null, revealed: false };
+
+      const els = {
+        card: document.getElementById("card"), lastDraw: document.getElementById("lastDraw"),
+        lastPayout: document.getElementById("lastPayout"), plays: document.getElementById("plays"),
+        total: document.getElementById("total"), average: document.getElementById("average"),
+        canvas: document.getElementById("chart"), theory: document.getElementById("theory"),
+        reveal: document.getElementById("reveal"), reset: document.getElementById("reset")
+      };
+
+      function drawCard() {
+        const rank = ranks[Math.floor(Math.random() * ranks.length)];
+        const suit = suits[Math.floor(Math.random() * suits.length)];
+        return { rank, suit, payout: payoutFor(rank) };
+      }
+
+      function play(count) {
+        let card;
+        for (let i = 0; i < count; i += 1) {
+          card = drawCard();
+          state.n += 1;
+          state.sum += card.payout;
+          state.history.push(state.sum / state.n);
+        }
+        state.lastRank = card.rank;
+        state.lastSuit = card.suit;
+        state.lastPayout = card.payout;
+        render(count === 1);
+      }
+
+      function renderCard(animate) {
+        const isRed = state.lastSuit === "♥" || state.lastSuit === "♦";
+        els.card.className = `card${isRed ? " red" : ""}${animate ? " deal" : ""}`;
+        if (animate) setTimeout(() => els.card.classList.remove("deal"), 260);
+        els.card.innerHTML = `<span class="corner">${state.lastRank}<small>${state.lastSuit}</small></span><span class="rank">${state.lastSuit}</span><span class="corner bottom">${state.lastRank}<small>${state.lastSuit}</small></span><span class="payout">pays $${state.lastPayout}</span>`;
+      }
+
+      function renderStats() {
+        els.lastDraw.textContent = state.lastRank ? `${state.lastRank}${state.lastSuit}` : "—";
+        els.lastPayout.textContent = state.lastPayout === null ? "—" : `$${state.lastPayout}`;
+        els.plays.textContent = state.n.toLocaleString();
+        els.total.textContent = `$${state.sum.toLocaleString()}`;
+        els.average.textContent = state.n ? `$${(state.sum / state.n).toFixed(3)}` : "—";
+        els.theory.textContent = state.revealed ? `Theoretical expectation: 114 / 13 ≈ $${expected.toFixed(2)}` : "";
+        els.reveal.textContent = state.revealed ? "Theoretical expectation revealed" : "Reveal theoretical expectation";
+        els.reveal.setAttribute("aria-pressed", String(state.revealed));
+      }
+
+      function renderChart() {
+        const canvas = els.canvas;
+        const rect = canvas.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.round(rect.width * ratio));
+        canvas.height = Math.max(1, Math.round(rect.height * ratio));
+        const ctx = canvas.getContext("2d");
+        ctx.scale(ratio, ratio);
+        const w = rect.width, h = rect.height;
+        const m = { left: 62, right: 24, top: 24, bottom: 46 };
+        const pw = w - m.left - m.right, ph = h - m.top - m.bottom;
+        const maxX = Math.max(10, state.n);
+        const yMin = 0, yMax = 16;
+        const x = value => m.left + (value / maxX) * pw;
+        const y = value => m.top + (1 - (value - yMin) / (yMax - yMin)) * ph;
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.font = "13px system-ui, sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        for (let value = 0; value <= 16; value += 4) {
+          ctx.strokeStyle = "#242429";
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(m.left, y(value)); ctx.lineTo(w - m.right, y(value)); ctx.stroke();
+          ctx.fillStyle = "#999999"; ctx.fillText(`$${value}`, m.left - 10, y(value));
+        }
+        ctx.strokeStyle = "#777777";
+        ctx.beginPath(); ctx.moveTo(m.left, m.top); ctx.lineTo(m.left, h - m.bottom); ctx.lineTo(w - m.right, h - m.bottom); ctx.stroke();
+        ctx.fillStyle = "#999999";
+        ctx.textAlign = "center"; ctx.textBaseline = "top";
+        ctx.fillText("number of plays", m.left + pw / 2, h - 26);
+        ctx.fillText("0", m.left, h - m.bottom + 8);
+        ctx.textAlign = "right"; ctx.fillText(maxX.toLocaleString(), w - m.right, h - m.bottom + 8);
+
+        if (state.revealed) {
+          ctx.strokeStyle = "#f2cf66"; ctx.lineWidth = 2; ctx.setLineDash([8, 7]);
+          ctx.beginPath(); ctx.moveTo(m.left, y(expected)); ctx.lineTo(w - m.right, y(expected)); ctx.stroke();
+          ctx.setLineDash([]); ctx.fillStyle = "#f2cf66"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+          ctx.fillText("$8.77", m.left + 8, y(expected) - 5);
+        }
+
+        if (state.history.length) {
+          const stride = Math.max(1, Math.ceil(state.history.length / Math.max(500, Math.floor(pw * 1.5))));
+          ctx.strokeStyle = "#db73c5"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.beginPath();
+          state.history.forEach((mean, index) => {
+            if (index % stride !== 0 && index !== state.history.length - 1) return;
+            const px = x(index + 1), py = y(mean);
+            if (index === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          const lastMean = state.history[state.history.length - 1];
+          ctx.fillStyle = "#f2cf66"; ctx.beginPath(); ctx.arc(x(state.n), y(lastMean), 5, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+
+      function render(animateCard = false) {
+        if (state.lastRank) renderCard(animateCard);
+        renderStats();
+        renderChart();
+      }
+
+      function reset() {
+        Object.assign(state, { n: 0, sum: 0, history: [], lastRank: null, lastSuit: null, lastPayout: null, revealed: false });
+        els.card.className = "card";
+        els.card.innerHTML = '<div class="placeholder">Choose a draw count<br>to begin.</div>';
+        render();
+      }
+
+      document.querySelectorAll("[data-draw]").forEach(button => button.addEventListener("click", () => play(Number(button.dataset.draw))));
+      els.reset.addEventListener("click", reset);
+      els.reveal.addEventListener("click", () => { state.revealed = true; render(); });
+      window.addEventListener("resize", renderChart);
+      window.addEventListener("keydown", event => {
+        if (event.repeat) return;
+        const shortcuts = { "1": 1, "2": 10, "3": 100, "4": 1000 };
+        if (shortcuts[event.key]) play(shortcuts[event.key]);
+        if (event.key.toLowerCase() === "r") reset();
+        if (event.key.toLowerCase() === "e") { state.revealed = true; render(); }
+      });
+      render();
+    })();
+  </script>
+</body>
+</html>
